@@ -1,32 +1,17 @@
 services:
-  # 模式1：本地模型（首次启动需下载约2GB）
-  ml-server-local:
+  fda-server:
     build: .
-    container_name: ml-server-local
-    profiles: ["local"]
+    container_name: fda-server
     ports:
       - "8000:8000"
     volumes:
-      - model-cache:/app/models
+      - ./config.json:/app/config.json
+      - workspace-data:/app/workspace
+      - user-data:/app/data
     environment:
-      - MODE=local
-      - HF_ENDPOINT=https://hf-mirror.com
-    restart: unless-stopped
-
-  # 模式2：API模式（无需下载模型）
-  ml-server-api:
-    build: .
-    container_name: ml-server-api
-    profiles: ["api"]
-    ports:
-      - "8000:8000"
-    environment:
-      - MODE=api
-      - API_BASE=${API_BASE:-https://api.openai.com/v1}
-      - API_KEY=${API_KEY:-sk-xxx}
-      - EMBED_MODEL=${EMBED_MODEL:-text-embedding-3-small}
-      - RERANK_MODEL=${RERANK_MODEL:-}
+      - PYTHONUNBUFFERED=1
     restart: unless-stopped
 
 volumes:
-  model-cache:
+  workspace-data:
+  user-data:

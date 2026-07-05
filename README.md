@@ -1,134 +1,130 @@
-# ML API Server
+# FDA 医疗器械注册申报文档生成系统
 
-基于 FastAPI 的本地 ML 服务，提供文本向量化（Embedding）和重排序（Rerank）API。
+自动化生成 FDA 510(k) 和 NMPA 医疗器械注册申报文档。
 
-## 功能
+## 功能特性
 
-- `/api/embeddings` - 文本向量化
-- `/api/rerank` - 搜索结果重排序
+- **多模板支持**: 510(k)、NMPA、QTMS (FDA)、QTMS (NMPA)
+- **智能分析**: 自动分析产品资料，识别产品特征
+- **动态目录**: 根据产品特征自动生成对应注册目录结构
+- **文档生成**: 使用 AI 自动生成符合法规要求的申报文档
+- **一致性验证**: 跨文档参数一致性检查与自动修复
+- **多格式导出**: 支持 Word (.docx) 和 Markdown 格式导出
+- **中英文切换**: 根据模板自动切换语言，支持手动切换
 
 ## 快速开始
 
-### 1. 本地运行
+### Docker 部署（推荐）
+
+#### 1. 配置大模型
+
+编辑 `config.json`：
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "deepseek-v4-flash"
+    }
+  },
+  "providers": {
+    "deepseek": {
+      "apiKey": "你的API Key",
+      "apiBase": "http://your-api-server/v1"
+    }
+  }
+}
+```
+
+#### 2. 启动服务
 
 ```bash
-# 创建虚拟环境
-python -m venv myenv
-myenv\Scripts\activate
-
-# 安装依赖
-pip install fastapi uvicorn pydantic sentence-transformers transformers torch
-
-# 启动服务
-python ml_server.py
+docker compose up -d
 ```
 
-### 2. Docker 部署
+#### 3. 访问系统
 
-`docker-compose.yml` 提供两种部署模式：
+浏览器打开：`http://localhost:8000/fda_frontend.html`
 
-#### 模式一：本地模型（首次需下载约 2GB）
+### 本地部署
+
+#### 1. 安装依赖
 
 ```bash
-# 构建并启动（使用本地 embedding 和 rerank 模型）
-docker compose --profile local up -d
-
-# 查看日志
-docker compose --profile local logs -f
-
-# 停止
-docker compose --profile local down
+pip install -e ".[fda]"
 ```
 
-#### 模式二：API 模式（推荐，无需下载模型）
-
-1. 复制并编辑配置文件：
-```bash
-cp .env.example .env
-```
-
-2. 编辑 `.env` 填入你的 API 信息：
-```env
-API_BASE=https://api.openai.com/v1
-API_KEY=sk-你的密钥
-EMBED_MODEL=text-embedding-3-small
-RERANK_MODEL=
-```
-
-3. 启动：
-```bash
-docker compose --profile api up -d
-```
-
-#### docker-compose.yml 配置说明
-
-```yaml
-services:
-  # 本地模型模式
-  ml-server-local:
-    profiles: ["local"]
-    environment:
-      - MODE=local
-      - HF_ENDPOINT=https://hf-mirror.com  # 国内镜像加速
-    volumes:
-      - model-cache:/app/models  # 模型缓存持久化
-
-  # API 模式
-  ml-server-api:
-    profiles: ["api"]
-    environment:
-      - MODE=api
-      - API_BASE=${API_BASE:-https://api.openai.com/v1}
-      - API_KEY=${API_KEY:-sk-xxx}
-      - EMBED_MODEL=${EMBED_MODEL:-text-embedding-3-small}
-      - RERANK_MODEL=${RERANK_MODEL:-}
-```
-
-## API 配置
-
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `MODE` | 运行模式：`local` 或 `api` | `local` |
-| `API_BASE` | API 地址 | `https://api.openai.com/v1` |
-| `API_KEY` | API 密钥 | - |
-| `EMBED_MODEL` | 向量化模型名称 | `text-embedding-3-small` |
-| `RERANK_MODEL` | 重排序模型名称（可选） | - |
-
-### 支持的 API 服务
-
-| 服务 | API_BASE |
-|------|----------|
-| OpenAI | `https://api.openai.com/v1` |
-| DeepSeek | `https://api.deepseek.com/v1` |
-| 硅基流动 | `https://api.siliconflow.cn/v1` |
-| 智谱 AI | `https://open.bigmodel.cn/api/paas/v4` |
-| 任意 OpenAI 兼容接口 | 自定义地址 |
-
-## API 使用示例
-
-### 文本向量化
+#### 2. 启动服务
 
 ```bash
-curl -X POST http://localhost:8000/api/embeddings \
-  -H "Content-Type: application/json" \
-  -d '{"text": "你好世界"}'
+python run.py
 ```
 
-### 搜索重排序
+#### 3. 打开前端
 
-```bash
-curl -X POST http://localhost:8000/api/rerank \
-  -H "Content-Type: application/json" \
-  -d '{"query": "机器学习", "documents": ["深度学习教程", "天气预报", "AI 基础入门"]}'
+浏览器打开 `fda_frontend.html`
+
+## 使用流程
+
+### 1. 配置工作区
+
+1. 选择申报模板（510(k) / NMPA / QTMS）
+2. 输入产品资料文件夹路径
+3. 点击 **下一步**
+
+### 2. 产品分析
+
+系统自动分析产品特征，确认信息后继续
+
+### 3. 生成文档
+
+点击 **生成全部文档**，系统根据产品特征生成注册申报文档
+
+### 4. 导出文档
+
+- 单个文档: 点击文档后点击 **导出当前文档**
+- 全部文档: 点击 **导出全部 (ZIP)**
+
+## API 接口
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/workspace/init` | POST | 初始化工作区 |
+| `/api/v1/workspace/analyze` | POST | 分析产品特征 |
+| `/api/v1/document/tree` | GET | 获取文档目录树 |
+| `/api/v1/document/generate` | POST | 生成文档 |
+| `/api/v1/document/content/{id}` | GET | 获取文档内容 |
+| `/api/v1/document/export/{id}` | GET | 导出单个文档 |
+| `/api/v1/document/export-all` | GET | 导出全部文档 |
+
+## 项目结构
+
+```
+fda/
+├── agent_core/          # Agent框架（LLM调用）
+├── fda_engine/          # FDA引擎核心代码
+│   ├── api/            # API路由
+│   ├── core/           # 核心引擎
+│   ├── rag/            # RAG检索
+│   ├── workflow/       # 工作流
+│   └── ingestion/      # 文档解析
+├── config.json         # 大模型配置
+├── fda_frontend.html   # 前端界面
+├── run.py              # 启动入口
+├── Dockerfile          # Docker构建
+├── docker-compose.yml  # Docker部署
+└── pyproject.toml      # 项目配置
 ```
 
-## 环境变量
+## 支持的模型
 
-| 变量 | 说明 |
-|------|------|
-| `HF_ENDPOINT` | HuggingFace 镜像地址（国内使用 `https://hf-mirror.com`） |
-| `HF_HOME` | 模型缓存目录 |
+| 提供商 | 模型 |
+|--------|------|
+| DeepSeek | deepseek-v4-flash, deepseek-chat |
+| OpenAI | GPT-4o, GPT-4-turbo |
+| 通义千问 | qwen-max, qwen-plus |
+| 其他 | 任意 OpenAI 兼容接口 |
 
 ## License
 
-MIT
+MIT License

@@ -2,22 +2,41 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-ENV HF_ENDPOINT=https://hf-mirror.com
-ENV HF_HOME=/app/models
+COPY pyproject.toml .
 
 RUN pip install --no-cache-dir \
     fastapi \
-    uvicorn \
-    pydantic \
+    uvicorn[standard] \
+    python-multipart \
     httpx \
-    sentence-transformers \
-    transformers \
-    torch
+    openai \
+    pydantic \
+    pydantic-settings \
+    langgraph \
+    langchain-core \
+    chromadb \
+    pymupdf \
+    python-docx \
+    jinja2 \
+    pyyaml \
+    loguru \
+    rich \
+    tiktoken \
+    json-repair \
+    chardet \
+    markdown \
+    aiofiles \
+    static-files
 
-COPY ml_server.py .
+COPY agent_core/ ./agent_core/
+COPY fda_engine/ ./fda_engine/
+COPY fda_cli.py .
+COPY run.py .
+COPY config.json .
+COPY fda_frontend.html .
 
-VOLUME ["/app/models"]
+VOLUME ["/app/workspace", "/app/data"]
 
 EXPOSE 8000
 
-CMD ["python", "ml_server.py"]
+CMD ["python", "run.py"]
