@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>医疗器械注册申报文档生成系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; height: 100vh; overflow: hidden; }
+        
+        /* Main Content */
+        .main-content { height: 100vh; overflow-y: auto; transition: margin-right 0.2s; }
+        
+        /* Workflow */
+        .workflow-step { padding: 10px 16px; border-radius: 8px; border: 2px solid #e5e7eb; cursor: pointer; transition: all 0.2s; }
+        .workflow-step.active { border-color: #3b82f6; background: #eff6ff; }
+        .workflow-step.completed { border-color: #10b981; background: #f0fdf4; }
+        .workflow-step.pending { opacity: 0.5; }
+        
+        /* Document Tree & Viewer */
+        .doc-card { transition: all 0.15s; border-left: 3px solid transparent; cursor: pointer; }
+        .doc-card:hover { background: #f9fafb; }
+        .doc-card.active { border-left-color: #3b82f6; background: #eff6ff; }
+        .status-badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+        .status-generated { background: #dcfce7; color: #166534; }
+        .status-pending { background: #f3f4f6; color: #6b7280; }
+        .status-generating { background: #fef3c7; color: #92400e; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        .viewer-container { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: auto; height: calc(100vh - 260px); }
+        .rendered-content { padding: 20px 24px; line-height: 1.7; color: #1f2937; }
+        .rendered-content h1 { font-size: 1.5rem; font-weight: 700; margin: 20px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #e5e7eb; }
+        .rendered-content h2 { font-size: 1.25rem; font-weight: 600; color: #1e40af; margin: 18px 0 10px; padding-left: 10px; border-left: 3px solid #3b82f6; }
+        .rendered-content h3 { font-size: 1.1rem; font-weight: 600; color: #374151; margin: 14px 0 8px; }
+        .rendered-content table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+        .rendered-content th { background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; font-weight: 600; }
+        .rendered-content td { border: 1px solid #e2e8f0; padding: 8px 12px; }
+        .rendered-content ul, .rendered-content ol { padding-left: 20px; margin: 8px 0; }
+        .rendered-content li { margin: 4px 0; }
+        .raw-content { font-family: 'Consolas', monospace; font-size: 13px; white-space: pre-wrap; padding: 20px 24px; }
+        
+        /* Buttons */
+        .btn { padding: 8px 16px; border-radius: 6px; font-weight: 500; font-size: 13px; cursor: pointer; border: none; transition: all 0.15s; }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-success { background: #10b981; color: white; }
+        .btn-success:hover { background: #059669; }
+        .btn-outline { background: white; border: 1px solid #d1d5db; color: #374151; }
+        .btn-outline:hover { border-color: #3b82f6; color: #3b82f6; }
+        
+        /* Chat Panel - Resizable */
+        .chat-panel {
+            position: fixed; right: 0; top: 0; bottom: 0; width: 380px; min-width: 280px; max-width: 600px;
+            background: white; border-left: 1px solid #e5e7eb;
+            display: flex; flex-direction: column; z-index: 100;
+        }
+        .chat-resize-handle {
+            position: absolute; left: -4px; top: 0; bottom: 0; width: 8px;
+            cursor: col-resize; z-index: 101;
+        }
+        .chat-resize-handle:hover { background: #3b82f6; opacity: 0.3; }
+        .chat-panel.collapsed { width: 44px; min-width: 44px; }
+        .chat-panel.collapsed .chat-content, .chat-panel.collapsed .chat-header-text { display: none; }
+        .chat-panel.collapsed .chat-resize-handle { display: none; }
+        
+        .chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+        .chat-msg { max-width: 90%; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.6; word-wrap: break-word; }
+        .chat-msg.user { background: #3b82f6; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .chat-msg.assistant { background: #f3f4f6; color: #1f2937; align-self: flex-start; border-bottom-left-radius: 4px; }
+        .chat-msg.system { background: #fef3c7; color: #92400e; align-self: center; font-size: 12px; padding: 6px 12px; }
+        .chat-msg p { margin: 6px 0; }
+        .chat-msg p:first-child { margin-top: 0; }
+        .chat-msg p:last-child { margin-bottom: 0; }
+        .chat-msg strong { font-weight: 600; color: #1e40af; }
+        .chat-msg table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; background: white; border-radius: 6px; }
+        .chat-msg th { background: #e5e7eb; border: 1px solid #d1d5db; padding: 5px 8px; text-align: left; font-weight: 600; }
+        .chat-msg td { border: 1px solid #d1d5db; padding: 5px 8px; }
+        .chat-msg ul, .chat-msg ol { padding-left: 16px; margin: 6px 0; }
+        .chat-msg li { margin: 3px 0; }
+        
+        .confirm-btn { display: inline-block; margin-top: 8px; padding: 6px 14px; background: #10b981; color: white; border-radius: 6px; cursor: pointer; font-size: 12px; border: none; }
+        .confirm-btn:hover { background: #059669; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Main Content -->
+    <div class="main-content" id="mainContentArea" style="margin-right: 380px;">
+        <div class="max-w-6xl mx-auto px-4 py-4">
+            <!-- Header -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center">
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="text-xl font-bold text-gray-900">医疗器械注册申报文档生成系统</h1>
+                            <p class="text-xs text-gray-500">FDA 510(k) / NMPA 注册申报</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="switchLang('zh')" id="btnZh" class="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700">中文</button>
+                        <button onclick="switchLang('en')" id="btnEn" class="px-2 py-1 rounded text-xs font-medium text-gray-500">EN</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workflow Steps -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-4">
+                <div class="flex gap-2">
+                    <div class="workflow-step active" id="step1" onclick="goToStep(1)">
+                        <div class="text-xs text-gray-500">1</div>
+                        <div class="text-sm font-medium">配置</div>
+                    </div>
+                    <div class="flex items-center text-gray-300">→</div>
+                    <div class="workflow-step pending" id="step2" onclick="goToStep(2)">
+                        <div class="text-xs text-gray-500">2</div>
+                        <div class="text-sm font-medium">分析</div>
+                    </div>
+                    <div class="flex items-center text-gray-300">→</div>
+                    <div class="workflow-step pending" id="step3" onclick="goToStep(3)">
+                        <div class="text-xs text-gray-500">3</div>
+                        <div class="text-sm font-medium">目录</div>
+                    </div>
+                    <div class="flex items-center text-gray-300">→</div>
+                    <div class="workflow-step pending" id="step4" onclick="goToStep(4)">
+                        <div class="text-xs text-gray-500">4</div>
+                        <div class="text-sm font-medium">生成</div>
+                    </div>
+                    <div class="flex items-center text-gray-300">→</div>
+                    <div class="workflow-step pending" id="step5" onclick="goToStep(5)">
+                        <div class="text-xs text-gray-500">5</div>
+                        <div class="text-sm font-medium">导出</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 1: Config -->
+            <div id="configPanel" class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+                <div class="flex gap-3 items-end">
+                    <div class="flex-1">
+                        <label class="block text-xs text-gray-600 mb-1">产品资料文件夹</label>
+                        <input type="text" id="folderPath" value="C:/Users/xaminxan/Desktop/FDA" class="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div class="w-48">
+                        <label class="block text-xs text-gray-600 mb-1">申报模板</label>
+                        <select id="templateSelect" class="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" onchange="onTemplateChange()">
+                            <option value="510k">510(k) Premarket</option>
+                            <option value="qtms_fda">QTMS (FDA)</option>
+                            <option value="nmpa">NMPA 医疗器械注册</option>
+                            <option value="qtms_nmpa">QTMS (NMPA)</option>
+                        </select>
+                    </div>
+                    <button onclick="nextStep()" class="btn btn-primary">下一步 →</button>
+                </div>
+            </div>
+
+            <!-- Step 2: Analysis Result -->
+            <div id="analysisPanel" class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4 hidden">
+                <h3 class="text-sm font-semibold text-gray-700 mb-3">产品特征分析结果</h3>
+                <div id="analysisContent" class="text-sm text-gray-500">分析中...</div>
+            </div>
+
+            <!-- Step 3-5: Document Panel -->
+            <div id="documentPanel" class="hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                    <div class="lg:col-span-2 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="p-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                            <span class="text-sm font-semibold text-gray-800">文档结构</span>
+                            <button onclick="generateAll()" class="btn btn-success text-xs">生成全部</button>
+                        </div>
+                        <div id="documentTree" class="p-2 space-y-1 max-h-[calc(100vh-300px)] overflow-auto"></div>
+                    </div>
+                    <div class="lg:col-span-3 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="p-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                            <div>
+                                <span class="text-sm font-semibold text-gray-800" id="viewerTitle">文档预览</span>
+                                <span class="text-xs text-gray-500 ml-2" id="viewerSubtitle"></span>
+                            </div>
+                            <div class="flex gap-1">
+                                <button onclick="toggleView('rendered')" id="btnRendered" class="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">格式化</button>
+                                <button onclick="toggleView('raw')" id="btnRaw" class="text-xs px-2 py-1 rounded text-gray-500 hover:bg-gray-100">原文</button>
+                            </div>
+                        </div>
+                        <div class="viewer-container">
+                            <div id="viewerRendered" class="rendered-content"><p class="text-gray-400">选择文档查看</p></div>
+                            <div id="viewerRaw" class="raw-content hidden"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 5: Export -->
+            <div id="exportPanel" class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hidden">
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="reviewDocs()" class="btn" style="background:#f59e0b;color:white;">审核文档</button>
+                    <button onclick="exportCurrentDoc()" class="btn btn-outline">导出当前文档</button>
+                    <button onclick="exportAllDocs()" class="btn btn-success">导出全部 (ZIP)</button>
+                    <button onclick="generateQMS()" class="btn" style="background:#6366f1;color:white;">生成质量体系</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Panel -->
+    <div class="chat-panel" id="chatPanel">
+        <div class="chat-resize-handle" id="resizeHandle"></div>
+        <div class="p-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between" style="flex-shrink:0;">
+            <div class="flex items-center gap-2">
+                <div class="w-7 h-7 bg-blue-600 rounded-full flex items-center justify-center">
+                    <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                    </svg>
+                </div>
+                <span class="chat-header-text text-sm font-semibold text-gray-800">助手</span>
+            </div>
+            <button onclick="toggleChatCollapse()" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+                </svg>
+            </button>
+        </div>
+        <div class="chat-content" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+            <!-- History Panel -->
+            <div id="historyPanel" class="hidden" style="border-bottom:1px solid #e5e7eb;max-height:200px;overflow-y:auto;background:#fafafa;">
+                <div class="p-2 text-xs text-gray-500 border-b border-gray-200 flex justify-between items-center">
+                    <span>历史记录</span>
+                    <button onclick="clearHistory()" class="text-red-500 hover:text-red-700">清空</button>
+                </div>
+                <div id="historyList"></div>
+            </div>
+            
+            <div class="chat-messages" id="chatMessages"></div>
+            <div style="padding:12px;border-top:1px solid #e5e7eb;flex-shrink:0;">
+                <div style="display:flex;gap:8px;margin-bottom:8px;">
+                    <button onclick="toggleHistory()" class="text-xs text-gray-500 hover:text-blue-600">📋 历史</button>
+                    <button onclick="newChat()" class="text-xs text-gray-500 hover:text-green-600">➕ 新对话</button>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="chatInput" placeholder="输入问题..." style="flex:1;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;" onkeypress="if(event.key==='Enter')sendChat()">
+                    <button onclick="sendChat()" class="btn btn-primary" style="padding:8px 12px;">发送</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api/v1';
+        let documentTree = null, currentContent = '', currentView = 'rendered', activeNodeId = null, currentLang = 'zh', currentStep = 1, productAnalysis = null;
+        let chatHistory = [];
+        let sessions = JSON.parse(localStorage.getItem('chat_sessions') || '[]');
+        let currentSessionId = Date.now().toString();
+
+        // Save current session to localStorage
+        function saveSession() {
+            const session = {
+                id: currentSessionId,
+                date: new Date().toLocaleString('zh-CN'),
+                folder: document.getElementById('folderPath').value,
+                template: document.getElementById('templateSelect').value,
+                step: currentStep,
+                product: productAnalysis,
+                messages: chatHistory.slice(-20) // Keep last 20 messages
+            };
+            const idx = sessions.findIndex(s => s.id === currentSessionId);
+            if (idx >= 0) sessions[idx] = session;
+            else sessions.unshift(session);
+            if (sessions.length > 20) sessions = sessions.slice(0, 20);
+            localStorage.setItem('chat_sessions', JSON.stringify(sessions));
+        }
+
+        // Load session
+        function loadSession(sessionId) {
+            const session = sessions.find(s => s.id === sessionId);
+            if (!session) return;
+            
+            currentSessionId = session.id;
+            document.getElementById('folderPath').value = session.folder || '';
+            document.getElementById('templateSelect').value = session.template || '510k';
+            currentStep = session.step || 1;
+            productAnalysis = session.product;
+            chatHistory = session.messages || [];
+            
+            updateWorkflowUI();
+            document.getElementById('chatMessages').innerHTML = '';
+            chatHistory.forEach(m => addChat(m.content, m.type, false));
+            if (productAnalysis) showAnalysis(productAnalysis);
+            if (currentStep >= 3) refreshTree();
+            
+            document.getElementById('historyPanel').classList.add('hidden');
+            addChat('已恢复上次对话', 'system');
+        }
+
+        // New chat
+        function newChat() {
+            currentSessionId = Date.now().toString();
+            chatHistory = [];
+            document.getElementById('chatMessages').innerHTML = '';
+            currentStep = 1;
+            productAnalysis = null;
+            updateWorkflowUI();
+            document.getElementById('configPanel').classList.remove('hidden');
+            document.getElementById('analysisPanel').classList.add('hidden');
+            document.getElementById('documentPanel').classList.add('hidden');
+            document.getElementById('exportPanel').classList.add('hidden');
+            addChat('新对话已开始。', 'system');
+        }
+
+        // Toggle history panel
+        function toggleHistory() {
+            const panel = document.getElementById('historyPanel');
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) renderHistory();
+        }
+
+        // Render history list
+        function renderHistory() {
+            const list = document.getElementById('historyList');
+            if (sessions.length === 0) {
+                list.innerHTML = '<div class="p-3 text-xs text-gray-400 text-center">暂无历史记录</div>';
+                return;
+            }
+            list.innerHTML = sessions.map(s => `
+                <div onclick="loadSession('${s.id}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #e5e7eb;hover:bg-white;">
+                    <div style="font-size:12px;font-weight:500;color:#374151;">${s.template?.toUpperCase() || 'FDA'}</div>
+                    <div style="font-size:11px;color:#9ca3af;">${s.date} | 步骤${s.step || 1}</div>
+                    <div style="font-size:11px;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.messages?.[s.messages.length-1]?.content?.substring(0, 50) || '...'}</div>
+                </div>
+            `).join('');
+        }
+
+        // Clear history
+        function clearHistory() {
+            if (confirm('确定清空所有历史记录？')) {
+                sessions = [];
+                localStorage.removeItem('chat_sessions');
+                renderHistory();
+            }
+        }
+
+        // Resizable chat panel
+        const chatPanel = document.getElementById('chatPanel');
+        const resizeHandle = document.getElementById('resizeHandle');
+        const mainContent = document.getElementById('mainContentArea');
+        let isResizing = false;
+
+        resizeHandle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 280), 600);
+            chatPanel.style.width = newWidth + 'px';
+            mainContent.style.marginRight = newWidth + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        });
+
+        // Language
+        function switchLang(lang) {
+            currentLang = lang;
+            document.getElementById('btnZh').className = `px-2 py-1 rounded text-xs font-medium ${lang === 'zh' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`;
+            document.getElementById('btnEn').className = `px-2 py-1 rounded text-xs font-medium ${lang === 'en' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`;
+        }
+
+        function onTemplateChange() {
+            const t = document.getElementById('templateSelect').value;
+            switchLang(t === 'nmpa' || t === 'qtms_nmpa' ? 'zh' : 'en');
+        }
+
+        // Workflow
+        function goToStep(step) {
+            if (step > currentStep + 1) return;
+            currentStep = step;
+            updateWorkflowUI();
+        }
+
+        function updateWorkflowUI() {
+            for (let i = 1; i <= 5; i++) {
+                const el = document.getElementById(`step${i}`);
+                el.className = 'workflow-step ' + (i < currentStep ? 'completed' : i === currentStep ? 'active' : 'pending');
+            }
+            document.getElementById('configPanel').classList.toggle('hidden', currentStep > 1);
+            document.getElementById('analysisPanel').classList.toggle('hidden', currentStep < 2 || currentStep > 2);
+            document.getElementById('documentPanel').classList.toggle('hidden', currentStep < 3);
+            document.getElementById('exportPanel').classList.toggle('hidden', currentStep < 5);
+        }
+
+        async function nextStep() {
+            currentStep++;
+            if (currentStep === 2) await initWorkspace();
+            else if (currentStep === 3) { await refreshTree(); addChat('请确认目录是否正确，或告诉我需要调整的内容。'); }
+            updateWorkflowUI();
+        }
+
+        // Workspace
+        async function initWorkspace() {
+            const folder = document.getElementById('folderPath').value.trim();
+            const template = document.getElementById('templateSelect').value;
+            addChat('正在初始化...', 'system');
+            
+            try {
+                const res = await fetch(`${API_BASE}/workspace/init`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder_path: folder, fda_template: template })
+                });
+                const data = await res.json();
+                if (data.language === 'zh') switchLang('zh'); else switchLang('en');
+                if (data.workspace_path) document.getElementById('folderPath').value = data.workspace_path;
+                
+                // Analyze
+                const aRes = await fetch(`${API_BASE}/workspace/analyze`, { method: 'POST' });
+                const aData = await aRes.json();
+                
+                if (aData.status === 'success') {
+                    productAnalysis = aData.characteristics;
+                    showAnalysis(aData.characteristics);
+                    
+                    // Build detailed confirmation message
+                    const c = aData.characteristics;
+                    const d = c.details || {};
+                    
+                    let msg = `**产品信息提取完成，请确认以下内容：**\n\n`;
+                    
+                    // Basic info table
+                    msg += `| 项目 | 内容 |\n|------|------|\n`;
+                    msg += `| 产品名称 | ${d.product_name || c.product_name || '待补充'} |\n`;
+                    msg += `| 英文名称 | ${d.product_name_en || '待补充'} |\n`;
+                    msg += `| 产品型号 | ${d.model || '待补充'} |\n`;
+                    msg += `| 产品类型 | ${c.product_type || '待补充'} |\n`;
+                    msg += `| 器械分类 | ${c.device_class || '待补充'} |\n`;
+                    msg += `| 灭菌状态 | ${c.sterility || '待补充'} |\n`;
+                    
+                    // Intended use
+                    msg += `\n**预期用途：**\n${d.intended_use || d.indications || '待补充'}\n`;
+                    
+                    // Structure
+                    msg += `\n**结构组成：**\n${d.structure || '待补充'}\n`;
+                    
+                    // Key parameters
+                    if (d.performance) {
+                        msg += `\n**主要性能参数：**\n`;
+                        msg += `| 参数 | 指标 |\n|------|------|\n`;
+                        if (d.performance.measurement_range) msg += `| 测量范围 | ${d.performance.measurement_range} |\n`;
+                        if (d.performance.accuracy) msg += `| 测量精度 | ${d.performance.accuracy} |\n`;
+                        if (d.performance.resolution) msg += `| 分辨率 | ${d.performance.resolution} |\n`;
+                        if (d.performance.response_time) msg += `| 响应时间 | ${d.performance.response_time} |\n`;
+                        if (d.performance.battery_life) msg += `| 电池续航 | ${d.performance.battery_life} |\n`;
+                    }
+                    
+                    // Materials and dimensions
+                    msg += `\n**材料与规格：**\n`;
+                    msg += `- 材料：${d.materials || '待补充'}\n`;
+                    msg += `- 尺寸：${d.dimensions || '待补充'}\n`;
+                    msg += `- 重量：${d.weight || '待补充'}\n`;
+                    msg += `- 供电：${d.power || '待补充'}\n`;
+                    msg += `- 连接：${d.connectivity || '待补充'}\n`;
+                    
+                    // Contraindications and warnings
+                    if (d.contraindications) msg += `\n**禁忌症：**\n${d.contraindications}\n`;
+                    if (d.warnings) msg += `\n**注意事项：**\n${d.warnings}\n`;
+                    
+                    // Standards
+                    if (d.standards && d.standards.length > 0) {
+                        msg += `\n**适用标准：**\n`;
+                        d.standards.forEach(s => msg += `- ${s}\n`);
+                    }
+                    
+                    msg += `\n**以上信息是否正确？确认后将基于此生成全部申报资料。**`;
+                    
+                    addChat(msg, 'assistant', true);
+                } else {
+                    addChat('初始化完成', 'system');
+                    currentStep = 3;
+                    updateWorkflowUI();
+                    await refreshTree();
+                }
+            } catch (e) {
+                addChat(`错误: ${e.message}`, 'system');
+                currentStep = 1;
+                updateWorkflowUI();
+            }
+        }
+
+        function showAnalysis(c) {
+            const d = c.details || {};
+            document.getElementById('analysisContent').innerHTML = `
+                <div class="grid grid-cols-4 gap-3 mb-3">
+                    <div class="bg-gray-50 p-2 rounded"><div class="text-xs text-gray-500">类型</div><div class="font-medium">${c.product_type||'-'}</div></div>
+                    <div class="bg-gray-50 p-2 rounded"><div class="text-xs text-gray-500">灭菌</div><div class="font-medium">${c.sterility||'-'}</div></div>
+                    <div class="bg-gray-50 p-2 rounded"><div class="text-xs text-gray-500">分类</div><div class="font-medium">${c.device_class||'-'}</div></div>
+                    <div class="bg-gray-50 p-2 rounded"><div class="text-xs text-gray-500">软件</div><div class="font-medium">${c.has_software?'是':'否'}</div></div>
+                </div>
+                ${d.product_name ? `<div class="text-sm"><strong>产品名称：</strong>${d.product_name}</div>` : ''}
+                ${d.intended_use ? `<div class="text-sm mt-1"><strong>预期用途：</strong>${d.intended_use.substring(0, 100)}...</div>` : ''}
+                ${d.structure ? `<div class="text-sm mt-1"><strong>结构组成：</strong>${d.structure.substring(0, 100)}...</div>` : ''}`;
+        }
+
+        // Chat
+        function addChat(msg, type = 'assistant', withConfirm = false) {
+            const container = document.getElementById('chatMessages');
+            const div = document.createElement('div');
+            div.className = `chat-msg ${type}`;
+            div.innerHTML = type === 'assistant' ? marked.parse(msg) : msg;
+            
+            if (withConfirm) {
+                const btn = document.createElement('button');
+                btn.className = 'confirm-btn';
+                btn.textContent = '确认，继续';
+                btn.onclick = () => { div.remove(); confirmProduct(); };
+                div.appendChild(document.createElement('br'));
+                div.appendChild(btn);
+            }
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            chatHistory.push({ content: msg, type: type });
+            saveSession();
+        }
+
+        async function confirmProduct() {
+            addChat('确认正确', 'user');
+            currentStep = 3;
+            updateWorkflowUI();
+            await refreshTree();
+            addChat('目录已生成。可点击左侧文档查看，或直接"生成全部"。如需调整请告诉我。');
+        }
+
+        async function sendChat() {
+            const input = document.getElementById('chatInput');
+            const msg = input.value.trim();
+            if (!msg) return;
+            addChat(msg, 'user');
+            input.value = '';
+            
+            // Check if we're waiting for QMS mode selection
+            if (waitingForQMSMode) {
+                await processQMSMode(msg);
+                return;
+            }
+            
+            // Check if we're waiting for QMS folder path
+            if (waitingForQMSFolder) {
+                waitingForQMSFolder = false;
+                existingQMSFolder = msg.trim();
+                addChat(`已收到文件夹路径：${existingQMSFolder}\n\n正在分析现有质量体系文件...`, 'system');
+                // Analyze existing QMS
+                try {
+                    const res = await fetch(`${API_BASE}/workspace/analyze-qms`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ folder_path: existingQMSFolder })
+                    });
+                    const data = await res.json();
+                    if (data.status === 'success') {
+                        addChat(`**现有质量体系分析结果：**\n\n${data.analysis}`, 'assistant');
+                        addChat('请补充以下信息：\n1. 公司最新产品清单\n2. 需要更新的部分\n\n或输入"开始更新"直接基于现有文件进行更新。', 'system');
+                        waitingForQMSUpdateInfo = true;
+                    } else {
+                        addChat(`分析失败：${data.message}`, 'system');
+                    }
+                } catch (e) { addChat(`错误: ${e.message}`, 'system'); }
+                return;
+            }
+            
+            // Check if we're waiting for QMS update info
+            if (waitingForQMSUpdateInfo) {
+                waitingForQMSUpdateInfo = false;
+                // Process update request
+                addChat('正在更新质量体系文件...', 'system');
+                try {
+                    await fetch(`${API_BASE}/document/generate-qms`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            node_id: 'all', 
+                            mode: 'update',
+                            existing_folder: existingQMSFolder,
+                            update_instructions: msg 
+                        })
+                    });
+                    addChat('质量体系文件更新已启动', 'system');
+                } catch (e) { addChat(`错误: ${e.message}`, 'system'); }
+                return;
+            }
+            
+            // Check if we're waiting for QMS product info
+            if (waitingForQMSInfo) {
+                waitingForQMSInfo = false;
+                await processQMSInfo(msg);
+                return;
+            }
+            
+            try {
+                const res = await fetch(`${API_BASE}/workspace/chat`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: msg, context: 'general' })
+                });
+                const data = await res.json();
+                addChat(data.response || data.error || '无响应');
+            } catch (e) { addChat(`错误: ${e.message}`, 'system'); }
+        }
+
+        function toggleChatCollapse() {
+            chatPanel.classList.toggle('collapsed');
+            mainContent.style.marginRight = chatPanel.classList.contains('collapsed') ? '44px' : chatPanel.style.width || '380px';
+        }
+
+        // Documents
+        async function refreshTree() {
+            try {
+                const res = await fetch(`${API_BASE}/document/tree`);
+                documentTree = await res.json();
+                renderTree(documentTree.root);
+            } catch (e) { console.error(e); }
+        }
+
+        function renderTree(node, level = 0) {
+            const container = document.getElementById('documentTree');
+            if (level === 0) container.innerHTML = '';
+            const div = document.createElement('div');
+            const isGenerated = node.status === 'generated';
+            const isGenerating = node.status === 'generating';
+            div.className = `doc-card rounded px-2 py-2 ${node.node_id === activeNodeId ? 'active' : ''} ${isGenerated ? 'hover:bg-blue-50' : ''}`;
+            div.style.marginLeft = `${level * 14}px`;
+            
+            let statusClass = 'status-pending';
+            let statusText = '待生成';
+            if (isGenerated) { statusClass = 'status-generated'; statusText = '完成'; }
+            else if (isGenerating) { statusClass = 'status-generating'; statusText = '生成中'; }
+            
+            div.innerHTML = `<div class="flex justify-between items-center"><span class="text-sm ${isGenerated ? 'text-gray-800' : 'text-gray-500'} truncate">${node.title}</span><span class="status-badge ${statusClass}">${statusText}</span></div>`;
+            if (isGenerated) {
+                div.style.cursor = 'pointer';
+                div.onclick = () => viewDocument(node.node_id, node.title);
+            }
+            container.appendChild(div);
+            if (node.children && Array.isArray(node.children)) node.children.forEach(c => renderTree(c, level + 1));
+        }
+
+        async function viewDocument(nodeId, title) {
+            activeNodeId = nodeId;
+            document.getElementById('viewerTitle').textContent = title;
+            document.getElementById('viewerSubtitle').textContent = '加载中...';
+            if (documentTree) renderTree(documentTree.root);
+            try {
+                const res = await fetch(`${API_BASE}/document/content/${nodeId}`);
+                const data = await res.json();
+                currentContent = data.content;
+                document.getElementById('viewerSubtitle').textContent = `${data.content.length} 字符`;
+                renderContent();
+            } catch (e) { document.getElementById('viewerSubtitle').textContent = '加载失败'; }
+        }
+
+        function toggleView(view) {
+            currentView = view;
+            document.getElementById('btnRendered').className = `text-xs px-2 py-1 rounded ${view === 'rendered' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`;
+            document.getElementById('btnRaw').className = `text-xs px-2 py-1 rounded ${view === 'raw' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`;
+            document.getElementById('viewerRendered').classList.toggle('hidden', view !== 'rendered');
+            document.getElementById('viewerRaw').classList.toggle('hidden', view !== 'raw');
+            renderContent();
+        }
+
+        function renderContent() {
+            if (currentView === 'rendered') document.getElementById('viewerRendered').innerHTML = marked.parse(currentContent || '');
+            else document.getElementById('viewerRaw').textContent = currentContent || '';
+        }
+
+        async function generateAll() {
+            addChat('正在生成全部文档...', 'system');
+            try {
+                await fetch(`${API_BASE}/document/generate`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ node_id: 'all', mode: 'auto' })
+                });
+                // Start polling for progress
+                pollProgress();
+            } catch (e) { addChat(`错误: ${e.message}`, 'system'); }
+        }
+
+        let progressPollInterval = null;
+        async function pollProgress() {
+            if (progressPollInterval) clearInterval(progressPollInterval);
+            let lastRefreshCount = 0;
+            progressPollInterval = setInterval(async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/document/progress`);
+                    const data = await res.json();
+                    const p = data.progress;
+                    
+                    if (data.status === 'generating') {
+                        // Update progress message
+                        let progressEl = document.getElementById('progressMsg');
+                        if (!progressEl) {
+                            progressEl = document.createElement('div');
+                            progressEl.id = 'progressMsg';
+                            progressEl.className = 'chat-msg system';
+                            document.getElementById('chatMessages').appendChild(progressEl);
+                        }
+                        const percent = Math.round((p.current / p.total) * 100);
+                        progressEl.innerHTML = `<strong>生成进度 ${percent}%</strong><br>${p.message}<br><div style="background:#e5e7eb;border-radius:4px;height:6px;margin-top:6px;"><div style="background:#3b82f6;height:100%;width:${percent}%;border-radius:4px;transition:width 0.3s;"></div></div>`;
+                        document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
+                        
+                        // Refresh tree every 3 completed docs
+                        if (data.generated_count > lastRefreshCount) {
+                            lastRefreshCount = data.generated_count;
+                            await refreshTree();
+                        }
+                    } else if (data.status === 'completed') {
+                        clearInterval(progressPollInterval);
+                        let progressEl = document.getElementById('progressMsg');
+                        if (progressEl) progressEl.remove();
+                        addChat(`生成完成！共 ${data.generated_count} 个文档。`, 'system');
+                        await refreshTree();
+                        saveSession();
+                    } else if (data.status === 'error') {
+                        clearInterval(progressPollInterval);
+                        addChat(`生成失败: ${p.message}`, 'system');
+                    }
+                } catch (e) {}
+            }, 2000); // Poll every 2 seconds
+        }
+
+        function exportCurrentDoc() { if (activeNodeId) window.open(`${API_BASE}/document/export/${activeNodeId}?format=docx`, '_blank'); }
+        function exportAllDocs() { window.open(`${API_BASE}/document/export-all?format=docx`, '_blank'); }
+        
+        async function reviewDocs() {
+            addChat('正在审核所有文档...', 'system');
+            try {
+                const res = await fetch(`${API_BASE}/document/review`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    const review = data.review;
+                    let msg = `**文档审核完成**\n\n`;
+                    msg += `**总体评分：** ${review.overall_score || 'N/A'}/100\n\n`;
+                    msg += `**审核摘要：** ${review.summary || '无'}\n\n`;
+                    
+                    if (review.issues && review.issues.length > 0) {
+                        msg += `**发现的问题：**\n`;
+                        review.issues.forEach((issue, i) => {
+                            msg += `${i+1}. [${issue.severity}] ${issue.doc_id}: ${issue.issue}\n`;
+                            msg += `   建议：${issue.suggestion}\n`;
+                        });
+                    }
+                    
+                    if (review.ai_patterns && review.ai_patterns.length > 0) {
+                        msg += `\n**已修复的AI痕迹：** ${review.ai_patterns.length} 处\n`;
+                    }
+                    
+                    msg += `\n**已自动修复：** ${data.fixed_documents} 个文档`;
+                    
+                    addChat(msg, 'assistant');
+                } else {
+                    addChat(`审核失败：${data.message}`, 'system');
+                }
+            } catch (e) { addChat(`错误: ${e.message}`, 'system'); }
+        }
+        
+        async function generateQMS() {
+            // First ask: create new or update existing
+            addChat(`请选择质量体系文件的操作模式：
+
+**1. 新建质量体系**
+从零开始创建完整的ISO 13485质量管理体系文件
+
+**2. 更新现有质量体系**
+导入已有质量体系文件，分析差距，补充/更新不足的部分
+
+请输入 1 或 2：`, 'assistant');
+            
+            waitingForQMSMode = true;
+        }
+        
+        let waitingForQMSMode = false;
+        let waitingForQMSInfo = false;
+        let qmsMode = 'new'; // 'new' or 'update'
+        let existingQMSFolder = '';
+        
+        async function processQMSMode(message) {
+            const mode = message.trim();
+            if (mode === '1' || mode.includes('新建') || mode.includes('new')) {
+                qmsMode = 'new';
+                addChat('已选择：新建质量体系\n\n请提供公司详细信息：', 'system');
+                waitingForQMSMode = false;
+                waitingForQMSInfo = true;
+                // Show company info template
+                addChat(`请按以下格式提供：
+
+**1. 公司基本信息**
+公司名称：
+公司规模：（小型/中型/大型）
+员工人数：
+注册地址：
+生产地址：
+
+**2. 组织架构**
+总经理/管理者代表：
+研发部门：（人数）
+生产部门：（人数）
+质量部门：（人数）
+
+**3. 所有产品清单**
+产品1：产品名 - 类型 - 分类 - 描述
+产品2：产品名 - 类型 - 分类 - 描述
+
+**4. 主要业务**
+生产/代工/设计开发/销售：
+
+请在下方输入以上信息：`, 'assistant');
+            } else if (mode === '2' || mode.includes('更新') || mode.includes('update')) {
+                qmsMode = 'update';
+                waitingForQMSMode = false;
+                addChat(`已选择：更新现有质量体系
+
+请提供：
+1. 现有质量体系文件夹路径（包含质量手册、程序文件等）
+2. 公司最新产品清单（如有变化）
+3. 需要更新的部分（如：新增产品、组织变更、法规更新等）
+
+输入文件夹路径：`, 'assistant');
+                waitingForQMSFolder = true;
+            } else {
+                addChat('请输入 1（新建）或 2（更新）', 'system');
+            }
+        }
+        
+        let waitingForQMSFolder = false;
+        let waitingForQMSUpdateInfo = false;
+        
+        async function processQMSInfo(message) {
+            // Parse comprehensive company information
+            const lines = message.split('\n');
+            let companyInfo = {
+                name: '',
+                size: '',
+                employees: '',
+                address: '',
+                productionAddress: '',
+                departments: {},
+                products: [],
+                business: ''
+            };
+            
+            let currentSection = '';
+            
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                
+                // Parse company name
+                if (trimmed.includes('公司名称') || trimmed.includes('Company')) {
+                    companyInfo.name = trimmed.split(/[：:]/)[1]?.trim() || '';
+                }
+                // Parse company size
+                else if (trimmed.includes('公司规模') || trimmed.includes('规模')) {
+                    companyInfo.size = trimmed.split(/[：:]/)[1]?.trim() || '';
+                }
+                // Parse employee count
+                else if (trimmed.includes('员工人数') || trimmed.includes('人数')) {
+                    companyInfo.employees = trimmed.split(/[：:]/)[1]?.trim() || '';
+                }
+                // Parse addresses
+                else if (trimmed.includes('注册地址')) {
+                    companyInfo.address = trimmed.split(/[：:]/)[1]?.trim() || '';
+                }
+                else if (trimmed.includes('生产地址')) {
+                    companyInfo.productionAddress = trimmed.split(/[：:]/)[1]?.trim() || '';
+                }
+                // Parse departments
+                else if (trimmed.includes('总经理') || trimmed.includes('管理者代表')) {
+                    companyInfo.departments.management = trimmed.split(/[：:]/)[1]?.trim() || '';
+                }
+                else if (trimmed.includes('研发')) {
+                    companyInfo.departments.rnd = trimmed.split(/[：:]/)[1]?.trim() || '';
+                }
+                else if (trimmed.includes('生产')) {
+                    companyInfo.departments.production = trimmed.split(/[：:]/)[1]?.trim() || '';
+                }
+                else if (trimmed.includes('质量')) {
+                    companyInfo.departments.quality = trimmed.split(/[：:]/)[1]?.trim() || '';
+                }
+                else if (trimmed.includes('采购')) {
+                    companyInfo.departments.procurement = trimmed.split(/[：:]/)[1]?.trim() || '';
+                }
+                else if (trimmed.includes('销售')) {
+                    companyInfo.departments.sales = trimmed.split(/[：:]/)[1]?.trim() || '';
+                }
+                // Parse products
+                else if (trimmed.match(/产品\d|Product\s*\d/i)) {
+                    const parts = trimmed.split(/[：:]/);
+                    if (parts.length >= 2) {
+                        const productStr = parts.slice(1).join(':').trim();
+                        const productParts = productStr.split(/[-－—]/);
+                        companyInfo.products.push({
+                            name: productParts[0]?.trim() || '',
+                            type: productParts[1]?.trim() || '医疗器械',
+                            category: productParts[2]?.trim() || '',
+                            description: productParts.slice(3).join('-').trim() || productStr
+                        });
+                    }
+                }
+                // Parse business scope
+                else if (trimmed.includes('主要业务') || trimmed.includes('业务范围')) {
+                    companyInfo.business = trimmed.split(/[：:]/)[1]?.trim() || '';
+                }
+            }
+            
+            // Validate
+            if (!companyInfo.name) {
+                addChat('请提供公司名称。格式：公司名称：XXX', 'system');
+                waitingForQMSInfo = true;
+                return;
+            }
+            
+            if (companyInfo.products.length === 0) {
+                addChat('请提供至少一个产品信息。格式：产品1：产品名 - 类型 - 分类 - 描述', 'system');
+                waitingForQMSInfo = true;
+                return;
+            }
+            
+            // Save to backend
+            await fetch(`${API_BASE}/workspace/save-company-products`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(companyInfo)
+            });
+            
+            // Show confirmation
+            let confirmMsg = `**已记录公司信息：**\n\n`;
+            confirmMsg += `| 项目 | 内容 |\n|------|------|\n`;
+            confirmMsg += `| 公司名称 | ${companyInfo.name} |\n`;
+            confirmMsg += `| 公司规模 | ${companyInfo.size || '未填写'} |\n`;
+            confirmMsg += `| 员工人数 | ${companyInfo.employees || '未填写'} |\n`;
+            confirmMsg += `| 主要业务 | ${companyInfo.business || '未填写'} |\n`;
+            confirmMsg += `\n**组织架构：**\n`;
+            if (companyInfo.departments.management) confirmMsg += `- 管理层：${companyInfo.departments.management}\n`;
+            if (companyInfo.departments.rnd) confirmMsg += `- 研发部：${companyInfo.departments.rnd}\n`;
+            if (companyInfo.departments.production) confirmMsg += `- 生产部：${companyInfo.departments.production}\n`;
+            if (companyInfo.departments.quality) confirmMsg += `- 质量部：${companyInfo.departments.quality}\n`;
+            confirmMsg += `\n**产品清单（${companyInfo.products.length}个）：**\n`;
+            companyInfo.products.forEach((p, i) => {
+                confirmMsg += `${i+1}. ${p.name} - ${p.type} - ${p.category}\n`;
+            });
+            confirmMsg += `\n开始生成质量体系文件...`;
+            
+            addChat(confirmMsg, 'system');
+            
+            // Generate QMS
+            try {
+                await fetch(`${API_BASE}/document/generate-qms`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ node_id: 'all', mode: 'auto' })
+                });
+                addChat('质量体系文件生成已启动，包括：\n- 质量手册\n- 程序文件（18份）\n- 作业指导书\n- 质量记录表格', 'system');
+            } catch (e) { addChat(`错误: ${e.message}`, 'system'); }
+        }
+                    await fetch(`${API_BASE}/document/generate-qms`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ node_id: 'all', mode: 'auto' })
+                    });
+                    addChat('质量体系文件生成已启动，包括：\n- 质量手册\n- 程序文件（18份）\n- 作业指导书\n- 质量记录表格', 'system');
+                } catch (e) { addChat(`错误: ${e.message}`, 'system'); }
+            } else {
+                addChat('未能解析产品信息，请按格式重新输入：\n\n公司名称：XXX\n产品1：产品名 - 类型 - 描述', 'system');
+            }
+        }
+
+        // Init
+        addChat('请选择模板和文件夹，点击"下一步"开始。', 'system');
+    </script>
+</body>
+</html>

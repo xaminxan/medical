@@ -1,0 +1,18 @@
+{
+  "agents": {
+    "defaults": {
+      "model": "deepseek-v4-flash",
+      "workspace": "./workspace"
+    }
+  },
+  "providers": {
+    "deepseek": {
+      "apiKey": "simon123",
+      "apiBase": "http://10.10.10.22:8317/v1"
+    }
+  },
+  "gateway": {
+    "port": 8765,
+    "host": "0.0.0.0"
+  }
+}
