@@ -1,0 +1,15 @@
+创建→激活→安装依赖→退出
+
+
+创建：cd D:\Python\Pythonevn， python -m venv myenv
+
+激活：
+cd D:\Python\Pythonevn
+myenv\Scripts\activate
+CD D:\python代码\RAG
+
+
+
+安装依赖：pip install requests
+
+退出：deactivate

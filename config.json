@@ -9,10 +9,29 @@
     "deepseek": {
       "apiKey": "simon123",
       "apiBase": "http://10.10.10.22:8317/v1"
+    },
+    "llm": {
+      "apiBase": "http://10.10.10.22:8317/v1",
+      "apiKey": "simon123",
+      "model": "deepseek-v4-flash",
+      "temperature": 1.0,
+      "stream": true,
+      "api_mode": "chat_completions",
+      "context_win": 30000,
+      "max_retries": 4,
+      "timeout": 5,
+      "read_timeout": 120
     }
   },
   "gateway": {
     "port": 8765,
     "host": "0.0.0.0"
+  },
+  "sag": {
+    "enabled": true,
+    "url": "http://10.10.10.200:4173",
+    "api_key": "sk-sag-REDACTED-PLEASE-SET-LOCALLY",
+    "project_id": "",
+    "top_k": 5
   }
 }
